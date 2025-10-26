@@ -68,3 +68,56 @@
         resolved: bool
     }
 )
+
+;; Read-only functions
+(define-read-only (get-session (session-id uint))
+    (map-get? sessions { session-id: session-id })
+)
+
+(define-read-only (get-mentor (mentor principal))
+    (map-get? mentors { mentor: mentor })
+)
+
+(define-read-only (get-mentee (mentee principal))
+    (map-get? mentees { mentee: mentee })
+)
+
+(define-read-only (get-session-nonce)
+    (ok (var-get session-nonce))
+)
+
+(define-read-only (get-platform-fee-percentage)
+    (ok (var-get platform-fee-percentage))
+)
+
+(define-read-only (get-total-platform-fees)
+    (ok (var-get total-platform-fees))
+)
+
+(define-read-only (get-mentor-rating (mentor principal) (rater principal))
+    (map-get? mentor-ratings { mentor: mentor, rater: rater })
+)
+
+(define-read-only (get-dispute (session-id uint))
+    (map-get? dispute-sessions { session-id: session-id })
+)
+
+(define-read-only (is-mentor-active (mentor principal))
+    (match (map-get? mentors { mentor: mentor })
+        mentor-data (ok (get active mentor-data))
+        (ok false)
+    )
+)
+
+(define-read-only (calculate-platform-fee (amount uint))
+    (ok (/ (* amount (var-get platform-fee-percentage)) u100))
+)
+
+(define-read-only (calculate-mentor-payout (amount uint))
+    (let
+        (
+            (fee (/ (* amount (var-get platform-fee-percentage)) u100))
+        )
+        (ok (- amount fee))
+    )
+)
