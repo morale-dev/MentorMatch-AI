@@ -21,3 +21,50 @@
 (define-data-var total-platform-fees uint u0)
 (define-data-var min-feedback-score uint u1)
 (define-data-var max-feedback-score uint u5)
+
+;; Data maps
+(define-map sessions
+    { session-id: uint }
+    {
+        mentor: principal,
+        mentee: principal,
+        amount: uint,
+        status: (string-ascii 20),
+        feedback-score: uint,
+        created-at: uint,
+        completed-at: uint
+    }
+)
+
+(define-map mentors
+    { mentor: principal }
+    { 
+        active: bool, 
+        total-sessions: uint,
+        total-earnings: uint,
+        average-rating: uint,
+        specialization: (string-ascii 50)
+    }
+)
+
+(define-map mentees
+    { mentee: principal }
+    {
+        total-sessions: uint,
+        active-sessions: uint
+    }
+)
+
+(define-map mentor-ratings
+    { mentor: principal, rater: principal }
+    { rating: uint, session-id: uint }
+)
+
+(define-map dispute-sessions
+    { session-id: uint }
+    {
+        disputed-by: principal,
+        reason: (string-ascii 200),
+        resolved: bool
+    }
+)
