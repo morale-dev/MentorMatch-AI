@@ -283,3 +283,118 @@
         (ok true)
     )
 )
+
+;; #[allow(unchecked_data)]
+(define-public (rate-mentor (mentor principal) (rating uint) (session-id uint))
+    (let
+        (
+            (session (unwrap! (map-get? sessions { session-id: session-id }) err-not-found))
+        )
+        (asserts! (is-eq (get mentee session) tx-sender) err-unauthorized)
+        (asserts! (is-eq (get mentor session) mentor) err-unauthorized)
+        (asserts! (is-eq (get status session) "completed") err-invalid-status)
+        (asserts! (and (>= rating u1) (<= rating u5)) err-invalid-rating)
+        
+        (ok (map-set mentor-ratings
+            { mentor: mentor, rater: tx-sender }
+            { rating: rating, session-id: session-id }
+        ))
+    )
+)
+
+;; #[allow(unchecked_data)]
+(define-public (dispute-session (session-id uint) (reason (string-ascii 200)))
+    (let
+        (
+            (session (unwrap! (map-get? sessions { session-id: session-id }) err-not-found))
+        )
+        (asserts! (or (is-eq (get mentee session) tx-sender) 
+                      (is-eq (get mentor session) tx-sender)) err-unauthorized)
+        (asserts! (is-eq (get status session) "pending") err-invalid-status)
+        
+        (ok (map-set dispute-sessions
+            { session-id: session-id }
+            {
+                disputed-by: tx-sender,
+                reason: reason,
+                resolved: false
+            }
+        ))
+    )
+)
+
+;; #[allow(unchecked_data)]
+(define-public (resolve-dispute (session-id uint) (refund-mentee bool))
+    (let
+        (
+            (session (unwrap! (map-get? sessions { session-id: session-id }) err-not-found))
+            (dispute (unwrap! (map-get? dispute-sessions { session-id: session-id }) err-not-found))
+        )
+        (asserts! (is-eq tx-sender contract-owner) err-owner-only)
+        (asserts! (not (get resolved dispute)) err-invalid-status)
+        
+        (if refund-mentee
+            (try! (as-contract (stx-transfer? (get amount session) tx-sender (get mentee session))))
+            (try! (as-contract (stx-transfer? (get amount session) tx-sender (get mentor session))))
+        )
+        
+        (map-set dispute-sessions
+            { session-id: session-id }
+            (merge dispute { resolved: true })
+        )
+        
+        (map-set sessions
+            { session-id: session-id }
+            (merge session { status: "resolved" })
+        )
+        
+        (ok true)
+    )
+)
+
+;; Admin functions
+(define-public (set-platform-fee (new-fee uint))
+    (begin
+        (asserts! (is-eq tx-sender contract-owner) err-owner-only)
+        (asserts! (<= new-fee u20) err-invalid-amount) ;; Max 20% fee
+        (ok (var-set platform-fee-percentage new-fee))
+    )
+)
+
+(define-public (withdraw-platform-fees (amount uint))
+    (begin
+        (asserts! (is-eq tx-sender contract-owner) err-owner-only)
+        (asserts! (<= amount (var-get total-platform-fees)) err-insufficient-balance)
+        (try! (as-contract (stx-transfer? amount tx-sender contract-owner)))
+        (var-set total-platform-fees (- (var-get total-platform-fees) amount))
+        (ok true)
+    )
+)
+
+(define-public (update-feedback-range (min-score uint) (max-score uint))
+    (begin
+        (asserts! (is-eq tx-sender contract-owner) err-owner-only)
+        (asserts! (< min-score max-score) err-invalid-rating)
+        (var-set min-feedback-score min-score)
+        (var-set max-feedback-score max-score)
+        (ok true)
+    )
+)
+
+;; Emergency pause function
+;; #[allow(unchecked_data)]
+(define-public (emergency-refund (session-id uint))
+    (let
+        (
+            (session (unwrap! (map-get? sessions { session-id: session-id }) err-not-found))
+        )
+        (asserts! (is-eq tx-sender contract-owner) err-owner-only)
+        (asserts! (is-eq (get status session) "pending") err-invalid-status)
+        (try! (as-contract (stx-transfer? (get amount session) tx-sender (get mentee session))))
+        (map-set sessions
+            { session-id: session-id }
+            (merge session { status: "refunded" })
+        )
+        (ok true)
+    )
+)
