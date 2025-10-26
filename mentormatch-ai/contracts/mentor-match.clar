@@ -1,30 +1,23 @@
+;; MentorMatch AI - Decentralized mentorship platform
+;; Manages session bookings, feedback, and payments
 
-;; title: mentor-match
-;; version:
-;; summary:
-;; description:
+;; Constants
+(define-constant contract-owner tx-sender)
+(define-constant err-owner-only (err u100))
+(define-constant err-not-found (err u101))
+(define-constant err-already-exists (err u102))
+(define-constant err-unauthorized (err u103))
+(define-constant err-invalid-status (err u104))
+(define-constant err-invalid-amount (err u105))
+(define-constant err-insufficient-balance (err u106))
+(define-constant err-mentor-inactive (err u107))
+(define-constant err-invalid-rating (err u108))
+(define-constant err-session-expired (err u109))
+(define-constant min-session-amount u1000000) ;; 1 STX minimum
 
-;; traits
-;;
-
-;; token definitions
-;;
-
-;; constants
-;;
-
-;; data vars
-;;
-
-;; data maps
-;;
-
-;; public functions
-;;
-
-;; read only functions
-;;
-
-;; private functions
-;;
-
+;; Data vars
+(define-data-var session-nonce uint u0)
+(define-data-var platform-fee-percentage uint u5) ;; 5% platform fee
+(define-data-var total-platform-fees uint u0)
+(define-data-var min-feedback-score uint u1)
+(define-data-var max-feedback-score uint u5)
