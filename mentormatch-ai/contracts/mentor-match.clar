@@ -121,3 +121,165 @@
         (ok (- amount fee))
     )
 )
+
+;; Public functions
+;; #[allow(unchecked_data)]
+(define-public (register-mentor (specialization (string-ascii 50)))
+    (begin
+        (asserts! (is-none (map-get? mentors { mentor: tx-sender })) err-already-exists)
+        (ok (map-set mentors
+            { mentor: tx-sender }
+            { 
+                active: true, 
+                total-sessions: u0,
+                total-earnings: u0,
+                average-rating: u0,
+                specialization: specialization
+            }
+        ))
+    )
+)
+
+(define-public (deactivate-mentor)
+    (let
+        (
+            (mentor-data (unwrap! (map-get? mentors { mentor: tx-sender }) err-not-found))
+        )
+        (ok (map-set mentors
+            { mentor: tx-sender }
+            (merge mentor-data { active: false })
+        ))
+    )
+)
+
+(define-public (reactivate-mentor)
+    (let
+        (
+            (mentor-data (unwrap! (map-get? mentors { mentor: tx-sender }) err-not-found))
+        )
+        (ok (map-set mentors
+            { mentor: tx-sender }
+            (merge mentor-data { active: true })
+        ))
+    )
+)
+
+(define-public (update-specialization (new-specialization (string-ascii 50)))
+    (let
+        (
+            (mentor-data (unwrap! (map-get? mentors { mentor: tx-sender }) err-not-found))
+        )
+        (ok (map-set mentors
+            { mentor: tx-sender }
+            (merge mentor-data { specialization: new-specialization })
+        ))
+    )
+)
+
+;; #[allow(unchecked_data)]
+(define-public (create-session (mentor principal) (amount uint))
+    (let
+        (
+            (new-session-id (+ (var-get session-nonce) u1))
+            (mentor-data (unwrap! (map-get? mentors { mentor: mentor }) err-not-found))
+            (mentee-data (default-to { total-sessions: u0, active-sessions: u0 } 
+                (map-get? mentees { mentee: tx-sender })))
+        )
+        (asserts! (get active mentor-data) err-mentor-inactive)
+        (asserts! (>= amount min-session-amount) err-invalid-amount)
+        (try! (stx-transfer? amount tx-sender (as-contract tx-sender)))
+        (map-set sessions
+            { session-id: new-session-id }
+            {
+                mentor: mentor,
+                mentee: tx-sender,
+                amount: amount,
+                status: "pending",
+                feedback-score: u0,
+                created-at: stacks-block-height,
+                completed-at: u0
+            }
+        )
+        (map-set mentees
+            { mentee: tx-sender }
+            { 
+                total-sessions: (+ (get total-sessions mentee-data) u1),
+                active-sessions: (+ (get active-sessions mentee-data) u1)
+            }
+        )
+        (var-set session-nonce new-session-id)
+        (ok new-session-id)
+    )
+)
+
+;; #[allow(unchecked_data)]
+(define-public (cancel-session (session-id uint))
+    (let
+        (
+            (session (unwrap! (map-get? sessions { session-id: session-id }) err-not-found))
+            (mentee-data (unwrap! (map-get? mentees { mentee: tx-sender }) err-not-found))
+        )
+        (asserts! (is-eq (get mentee session) tx-sender) err-unauthorized)
+        (asserts! (is-eq (get status session) "pending") err-invalid-status)
+        (try! (as-contract (stx-transfer? (get amount session) tx-sender (get mentee session))))
+        (map-set sessions
+            { session-id: session-id }
+            (merge session { status: "cancelled" })
+        )
+        (map-set mentees
+            { mentee: tx-sender }
+            (merge mentee-data { active-sessions: (- (get active-sessions mentee-data) u1) })
+        )
+        (ok true)
+    )
+)
+
+;; #[allow(unchecked_data)]
+(define-public (complete-session (session-id uint) (feedback-score uint))
+    (let
+        (
+            (session (unwrap! (map-get? sessions { session-id: session-id }) err-not-found))
+            (mentor-data (unwrap! (map-get? mentors { mentor: (get mentor session) }) err-not-found))
+            (mentee-data (unwrap! (map-get? mentees { mentee: tx-sender }) err-not-found))
+            (platform-fee (/ (* (get amount session) (var-get platform-fee-percentage)) u100))
+            (mentor-payout (- (get amount session) platform-fee))
+        )
+        (asserts! (is-eq (get mentee session) tx-sender) err-unauthorized)
+        (asserts! (is-eq (get status session) "pending") err-invalid-status)
+        (asserts! (and (>= feedback-score (var-get min-feedback-score)) 
+                       (<= feedback-score (var-get max-feedback-score))) err-invalid-rating)
+        
+        ;; Transfer payout to mentor
+        (try! (as-contract (stx-transfer? mentor-payout tx-sender (get mentor session))))
+        
+        ;; Update platform fees
+        (var-set total-platform-fees (+ (var-get total-platform-fees) platform-fee))
+        
+        ;; Update session
+        (map-set sessions
+            { session-id: session-id }
+            (merge session { 
+                status: "completed", 
+                feedback-score: feedback-score,
+                completed-at: stacks-block-height
+            })
+        )
+        
+        ;; Update mentor stats
+        (map-set mentors
+            { mentor: (get mentor session) }
+            (merge mentor-data {
+                total-sessions: (+ (get total-sessions mentor-data) u1),
+                total-earnings: (+ (get total-earnings mentor-data) mentor-payout)
+            })
+        )
+        
+        ;; Update mentee stats
+        (map-set mentees
+            { mentee: tx-sender }
+            (merge mentee-data { active-sessions: (- (get active-sessions mentee-data) u1) })
+        )
+        
+        (ok true)
+    )
+)
